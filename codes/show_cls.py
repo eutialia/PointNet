@@ -43,23 +43,30 @@ classifier.cuda()
 classifier.load_state_dict(torch.load(opt.model))
 classifier.eval()
 
+total_train = 0
+correct_train = 0
+
+total_test = 0
+correct_test = 0
 with torch.no_grad():
     for i, data in enumerate(train_dataloader, 0):
-            points, target = data
-            target = target[:, 0]
-            points = points.transpose(2, 1)
-            points, target = points.cuda(), target.cuda()
-            pred, trans, trans_feat = classifier(points)
-            pred_choice = pred.data.max(1)[1]
-            correct = pred_choice.eq(target.data).cpu().sum()
-            print(f'Train accuracy: {correct.item() / float(32)}')
-        
+        points, target = data
+        target = target[:, 0]
+        points = points.transpose(2, 1)
+        points, target = points.cuda(), target.cuda()
+        pred, trans, trans_feat = classifier(points)
+        pred_choice = pred.data.max(1)[1]
+        total_train += target.size(0)
+        correct_train += pred_choice.eq(target.data).cpu().sum().item()
+    print(f'Train accuracy: {100 * correct_train / total_train}')
+
     for i, data in enumerate(test_dataloader, 0):
-            points, target = data
-            target = target[:, 0]
-            points = points.transpose(2, 1)
-            points, target = points.cuda(), target.cuda()
-            pred, trans, trans_feat = classifier(points)
-            pred_choice = pred.data.max(1)[1]
-            correct = pred_choice.eq(target.data).cpu().sum()
-            print(f'Test accuracy: {correct.item() / float(32)}')
+        points, target = data
+        target = target[:, 0]
+        points = points.transpose(2, 1)
+        points, target = points.cuda(), target.cuda()
+        pred, trans, trans_feat = classifier(points)
+        pred_choice = pred.data.max(1)[1]
+        total_test += target.size(0)
+        correct_test += pred_choice.eq(target.data).cpu().sum().item()
+    print(f'Test accuracy: {100 * correct_test / total_test}')
