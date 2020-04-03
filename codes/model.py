@@ -57,7 +57,7 @@ class TNet(nn.Module):
         x = self.fc1(x.view(x.size(0), -1))
         x = self.fc2(x)
         x = self.fc3(x)
-        x = torch.add(x, torch.ones(b, k*k)).view((-1, k, k))
+        x = torch.add(x, torch.ones(b, k*k).cuda()).view((-1, k, k))
         return x
 
 
@@ -159,7 +159,9 @@ class PointNetCls(nn.Module):
 
 def feature_transform_regularizer(trans):
     # compute |((trans * trans.transpose) - I)|^2
-    loss = torch.norm(trans*torch.transpose(trans, 1, 2) - torch.eye(trans.size()[-1]))
+    before_norm = trans @ torch.transpose(trans, 1, 2) - torch.eye(trans.size(-1)).repeat(trans.size(0), 1, 1).cuda()
+    before_norm = before_norm.view(trans.size(0), -1)
+    loss = torch.mean(torch.norm(before_norm, p=2, dim=1))
     return loss
 
 if __name__ == '__main__':
