@@ -57,7 +57,10 @@ class TNet(nn.Module):
         x = self.fc1(x.view(x.size(0), -1))
         x = self.fc2(x)
         x = self.fc3(x)
-        x = torch.add(x, torch.ones(b, k*k).cuda()).view((-1, k, k))
+        bias = Variable(torch.from_numpy(np.eye(k).flatten().astype(np.float32))).view(1,k*k).repeat(b,1)
+        if x.is_cuda:
+            bias = bias.cuda()
+        x = torch.add(x, bias).view((-1, k, k))
         return x
 
 
@@ -89,29 +92,29 @@ class PointNetfeat(nn.Module):
             nn.BatchNorm1d(1024)
         )
 
-
     def forward(self, x):
         n_pts = x.size()[2]
 
         # You will need these extra outputs:
         # trans = output of applying TNet function to input
         # trans_feat = output of applying TNet function to features (if feature_transform is true)
+        trans = self.tnet1(x)
+        x = torch.transpose(x, 1, 2)
+        x = torch.bmm(x, trans)
+        x = torch.transpose(x, 1, 2)
+        x = self.conv1(x)
+
         if self.feature_transform:
-            trans = self.tnet1(x)
-            x = trans @ x
-            x = self.conv1(x)
-            trans = self.tnet2(x)
-            pointfeat = trans @ x
-            trans_feat = self.tnet2(pointfeat)
-            x = self.conv2(pointfeat)
-            x = F.max_pool1d(x, n_pts)
+            trans_feat = self.tnet2(x)
+            x = torch.transpose(x, 1, 2)
+            x = torch.bmm(x, trans_feat)
+            x = torch.transpose(x, 1, 2)
         else:
-            trans = self.tnet1(x)
-            x = trans @ x
-            pointfeat = self.conv1(x)
-            trans_feat = self.tnet2(pointfeat)
-            x = self.conv2(pointfeat)
-            x = F.max_pool1d(x, n_pts)
+            trans_feat = None
+
+        pointfeat = x
+        x = self.conv2(x)
+        x = F.max_pool1d(x, n_pts)
 
         if self.global_feat: # This shows if we're doing classification or segmentation
             return x, trans, trans_feat
@@ -140,28 +143,55 @@ class PointNetCls(nn.Module):
         return F.log_softmax(x, dim=1), trans, trans_feat
 
 
-# class PointNetDenseCls(nn.Module):
-#     def __init__(self, k = 2, feature_transform=False):
-#         super(PointNetDenseCls, self).__init__()
-#         # get global features + point features from PointNetfeat
-#         # conv 1088 512
-#         # conv 512 256
-#         # conv 256 128
-#         # conv 128 k
-#         # softmax 
+class PointNetDenseCls(nn.Module):
+    def __init__(self, k = 2, feature_transform=False):
+        super(PointNetDenseCls, self).__init__()
+        # get global features + point features from PointNetfeat
+        # conv 1088 512
+        # conv 512 256
+        # conv 256 128
+        # conv 128 k
+        # softmax 
+        self.feat = PointNetfeat(global_feat=False, feature_transform=feature_transform)
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(1088, 512, 1),
+            nn.ReLU(),
+            nn.BatchNorm1d(512)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(512, 256, 1),
+            nn.ReLU(),
+            nn.BatchNorm1d(256)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(256, 128, 1),
+            nn.ReLU(),
+            nn.BatchNorm1d(128)
+        )
+        self.conv4 = nn.Conv1d(128, k, 1)
+        self.softmax = nn.Softmax(dim=2)
     
-#     def forward(self, x):
-#         # You will need these extra outputs: 
-#         # trans = output of applying TNet function to input
-#         # trans_feat = output of applying TNet function to features (if feature_transform is true)
-#         # (you can directly get them from PointNetfeat)
-#         return x, trans, trans_feat
+    def forward(self, x):
+        # You will need these extra outputs: 
+        # trans = output of applying TNet function to input
+        # trans_feat = output of applying TNet function to features (if feature_transform is true)
+        # (you can directly get them from PointNetfeat)
+        x, trans, trans_feat = self.feat(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = torch.transpose(x, 1, 2)
+        x = self.softmax(x)
+        return x, trans, trans_feat
 
 def feature_transform_regularizer(trans):
     # compute |((trans * trans.transpose) - I)|^2
-    before_norm = trans @ torch.transpose(trans, 1, 2) - torch.eye(trans.size(-1)).repeat(trans.size(0), 1, 1).cuda()
-    before_norm = before_norm.view(trans.size(0), -1)
-    loss = torch.mean(torch.norm(before_norm, p=2, dim=1))
+    I = torch.eye(trans.size(-1)).repeat(trans.size(0), 1, 1)
+    if trans.is_cuda:
+        I = I.cuda()
+    before_norm = torch.bmm(trans, torch.transpose(trans, 1, 2)) - I
+    loss = torch.mean(torch.norm(before_norm, p=2, dim=(1,2)))
     return loss
 
 if __name__ == '__main__':
@@ -189,6 +219,6 @@ if __name__ == '__main__':
     out, _, _ = cls(sim_data)
     print('class', out.size())
 
-    # seg = PointNetDenseCls(k = 3)
-    # out, _, _ = seg(sim_data)
-    # print('seg', out.size())
+    seg = PointNetDenseCls(k = 5)
+    out, _, _ = seg(sim_data)
+    print('seg', out.size())
