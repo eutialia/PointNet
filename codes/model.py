@@ -101,14 +101,14 @@ class PointNetfeat(nn.Module):
         # trans_feat = output of applying TNet function to features (if feature_transform is true)
         trans = self.tnet1(x)
         x = torch.transpose(x, 1, 2)
-        x = torch.bmm(x, trans)
+        x = x @ trans
         x = torch.transpose(x, 1, 2)
         x = self.conv1(x)
 
         if self.feature_transform:
             trans_feat = self.tnet2(x)
             x = torch.transpose(x, 1, 2)
-            x = torch.bmm(x, trans_feat)
+            x = x @ trans_feat
             x = torch.transpose(x, 1, 2)
         else:
             trans_feat = None
@@ -191,7 +191,7 @@ def feature_transform_regularizer(trans):
     I = torch.eye(trans.size(-1)).repeat(trans.size(0), 1, 1)
     if trans.is_cuda:
         I = I.cuda()
-    before_norm = torch.bmm(trans, torch.transpose(trans, 1, 2)) - I
+    before_norm = trans @ torch.transpose(trans, 1, 2) - I
     loss = torch.mean(torch.norm(before_norm, p=2, dim=(1,2)))
     return loss
 
