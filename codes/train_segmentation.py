@@ -13,8 +13,8 @@ from tqdm import tqdm
 import numpy as np
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
+parser.add_argument('--batchSize', type=int, default=24, help='input batch size')
+parser.add_argument('--workers', type=int, help='number of data loading workers', default=16)
 parser.add_argument('--nepoch', type=int, default=25, help='number of epochs to train for')
 parser.add_argument('--model', type=str, default='', help='model path')
 parser.add_argument('--outf', type=str, default='seg', help='output folder')
