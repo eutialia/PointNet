@@ -54,10 +54,11 @@ class TNet(nn.Module):
         x = self.conv_n64(x)
         x = self.conv_n128(x)
         x = F.max_pool1d(x, kernel_size=n)
-        x = self.fc1(x.view(x.size(0), -1))
+        x = x.view(-1, 1024)
+        x = self.fc1(x)
         x = self.fc2(x)
         x = self.fc3(x)
-        bias = Variable(torch.from_numpy(np.eye(k).flatten().astype(np.float32))).view(1,k*k).repeat(b,1)
+        bias = torch.eye(k).view(1, k*k).repeat(b, 1)
         if x.is_cuda:
             bias = bias.cuda()
         x = torch.add(x, bias).view((-1, k, k))
@@ -115,7 +116,7 @@ class PointNetfeat(nn.Module):
         pointfeat = x
         x = self.conv2(x)
         x = F.max_pool1d(x, n_pts)
-
+        x = x.view(-1, 1024)
         if self.global_feat: # This shows if we're doing classification or segmentation
             return x, trans, trans_feat
         else:
@@ -137,7 +138,7 @@ class PointNetCls(nn.Module):
 
     def forward(self, x):
         x, trans, trans_feat = self.feat(x)
-        x = F.relu(self.bn1(self.fc1(x.view(x.size(0), -1))))
+        x = F.relu(self.bn1(self.fc1(x)))
         x = F.relu(self.bn2(self.dropout(self.fc2(x))))
         x = self.fc3(x)
         return F.log_softmax(x, dim=1), trans, trans_feat
@@ -169,7 +170,7 @@ class PointNetDenseCls(nn.Module):
             nn.BatchNorm1d(128)
         )
         self.conv4 = nn.Conv1d(128, k, 1)
-        self.softmax = nn.Softmax(dim=2)
+        self.softmax = nn.Softmax(dim=1)
     
     def forward(self, x):
         # You will need these extra outputs: 
@@ -181,8 +182,8 @@ class PointNetDenseCls(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
-        x = torch.transpose(x, 1, 2)
         x = self.softmax(x)
+        x = torch.transpose(x, 1, 2).contiguous()
         return x, trans, trans_feat
 
 def feature_transform_regularizer(trans):
